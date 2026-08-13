@@ -69,7 +69,7 @@ def render(result):
     else:
         st.markdown("（未调用大模型，基于规则汇总）")
 
-    st.caption("免责声明：本报告由 AI 辅助生成，仅供研究参考，不构成投资建议。")
+    st.caption("免责声明：本报告仅供研究参考，不构成投资建议。")
 
 
 st.title("明鉴 · 企业财务尽调与风险研判 Agent")

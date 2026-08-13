@@ -95,6 +95,6 @@ def build_report(company, metrics, rules, narrative=None):
 
     lines.append("---")
     lines.append("")
-    lines.append("> 免责声明：本报告由 AI 辅助生成，仅供研究参考，不构成投资建议。")
+    lines.append("> 免责声明：本报告仅供研究参考，不构成投资建议。")
     lines.append("")
     return "\n".join(lines)
