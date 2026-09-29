@@ -6,8 +6,6 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB.svg?logo=python&logoColor=white)](#)
-[![赛道](https://img.shields.io/badge/赛道-Boundless%20Agents-orange.svg)](#)
-[![方向](https://img.shields.io/badge/方向-AI%2B金融-2E8B57.svg)](#)
 
 </div>
 
@@ -22,8 +20,6 @@
 - [快速开始](#快速开始)
 - [真实数据验证](#真实数据验证)
 - [项目结构](#项目结构)
-- [方案材料](#方案材料)
-- [迭代计划](#迭代计划)
 - [开源协议](#开源协议)
 - [免责声明](#免责声明)
 
@@ -149,27 +145,9 @@ python -m streamlit run app.py
 │   └── sample_data.py        # 内置样例数据
 ├── scripts/
 │   └── gen_test_pdf.py       # 从样例数据生成测试 PDF
-├── docs/                     # 方案材料
-│   ├── 明鉴_方案.pptx
-│   └── 明鉴_方案.pdf
-├── 方案书.md                 # 参赛方案书
 ├── LICENSE                   # Apache-2.0
 └── requirements.txt
 ```
-
-## 方案材料
-
-- 参赛方案书：[方案书.md](方案书.md)
-- 方案 PPT：[明鉴_方案.pptx](docs/明鉴_方案.pptx)
-- 方案 PDF：[明鉴_方案.pdf](docs/明鉴_方案.pdf)
-
-## 迭代计划
-
-| 阶段 | 目标 | 交付物 |
-|------|------|--------|
-| 初赛 | 验证场景价值与可行性 | 作品简介、方案 PPT/PDF、可选原型 |
-| 复赛 | 完成可运行 Demo 与技术验证 | 更新方案、Demo、运行说明、代码/工程材料 |
-| 决赛 | 现场路演与答辩 | 路演 PPT、现场 Demo、最终工程材料 |
 
 ## 开源协议
 
