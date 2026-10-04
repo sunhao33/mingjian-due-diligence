@@ -1,0 +1,8 @@
+openai>=1.40
+python-dotenv>=1.0
+pdfplumber>=0.11
+streamlit>=1.36
+pandas>=2.0
+# 仅开发辅助脚本 scripts/gen_test_pdf.py 需要；该脚本使用 fpdf2 的 new_x/new_y API，
+# 装成 PyFPDF（包名 fpdf）会因 cell() 不接受这两个参数而报错。
+fpdf2>=2.7.9

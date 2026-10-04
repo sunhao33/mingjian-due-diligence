@@ -1,0 +1,19 @@
+services:
+  mingjian:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: mingjian:latest
+    container_name: mingjian
+    ports:
+      - "8501:8501"
+    # 需要大模型功能时，取消注释并准备好仓库根目录的 .env（内含 DEEPSEEK_API_KEY）
+    # env_file:
+    #   - ../.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health',timeout=4).read()==b'ok' else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
