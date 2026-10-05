@@ -35,32 +35,48 @@ _CSS = """
 <style>
   .block-container {padding-top: 2.4rem; max-width: 1200px;}
   h1 {font-size: 1.95rem !important; letter-spacing: .5px;}
-  section[data-testid="stSidebar"] {background: #fafbfc;}
-  section[data-testid="stSidebar"] h1 {font-size: 1.15rem !important;}
 
-  .hero {padding: 20px 24px; border-radius: 14px; border: 1px solid #e6e8eb;
-         background: linear-gradient(135deg, #fbfcfe 0%, #f4f7fb 100%); margin-bottom: 6px;}
-  .hero-company {font-size: 1.25rem; font-weight: 700; color: #1b1f24;}
-  .hero-sub {color: #5b6470; font-size: .9rem; margin-top: 2px;}
+  /* 颜色一律取自 Streamlit 主题变量（--text-color / --background-color /
+     --secondary-background-color），深浅色主题自动适配；
+     边框用半透明灰、语义色用中间调，保证在白底与深底上都可读。
+     侧栏不再覆盖背景色，交给主题自己处理。 */
+  .hero {padding: 20px 24px; border-radius: 14px;
+         border: 1px solid rgba(128,128,128,.25);
+         background: var(--secondary-background-color); margin-bottom: 6px;}
+  .hero-company {font-size: 1.25rem; font-weight: 700; color: var(--text-color);}
+  .hero-sub {color: var(--text-color); opacity: .68; font-size: .9rem; margin-top: 2px;}
+
   .badge {display: inline-block; padding: 3px 14px; border-radius: 999px;
           font-weight: 700; font-size: .92rem;}
-  .badge-high  {background: #fdecea; color: #b3261e; border: 1px solid #f3c2bd;}
-  .badge-mid   {background: #fff4e5; color: #b26a00; border: 1px solid #f3d9b5;}
-  .badge-watch {background: #eaf2fd; color: #1a5fb4; border: 1px solid #c5daf5;}
-  .badge-low   {background: #e9f7ee; color: #1a7f37; border: 1px solid #bfe5cb;}
+  .badge-high  {background: rgba(224,82,82,.16);  color: #e05252;
+                border: 1px solid rgba(224,82,82,.45);}
+  .badge-mid   {background: rgba(219,140,32,.16); color: #d98c20;
+                border: 1px solid rgba(219,140,32,.45);}
+  .badge-watch {background: rgba(64,132,224,.16); color: #4084e0;
+                border: 1px solid rgba(64,132,224,.45);}
+  .badge-low   {background: rgba(46,158,91,.16);  color: #2e9e5b;
+                border: 1px solid rgba(46,158,91,.45);}
 
-  .card {padding: 14px 16px; border-radius: 12px; border: 1px solid #e6e8eb;
-         background: #fff; height: 100%;}
-  .card-label {color: #6b7280; font-size: .8rem;}
-  .card-value {font-size: 1.5rem; font-weight: 700; color: #1b1f24; line-height: 1.25;}
+  .card {padding: 14px 16px; border-radius: 12px;
+         border: 1px solid rgba(128,128,128,.25);
+         background: var(--background-color); height: 100%;}
+  .card-label {color: var(--text-color); opacity: .68; font-size: .8rem;}
+  .card-value {font-size: 1.5rem; font-weight: 700; color: var(--text-color);
+               line-height: 1.25;}
   .card-delta {font-size: .8rem; margin-top: 2px;}
-  .up {color: #b3261e;} .down {color: #1a7f37;} .flat {color: #6b7280;}
+  .up {color: #e05252;}                     /* 变差 */
+  .down {color: #2e9e5b;}                   /* 变好 */
+  .flat {color: var(--text-color); opacity: .6;}
 
-  .evi {background: #f7f8fa; border-left: 3px solid #c9ced6; padding: 6px 12px;
-        border-radius: 0 6px 6px 0; color: #333; font-size: .88rem; margin: 4px 0;}
-  .empty {padding: 46px 24px; border-radius: 14px; border: 1px dashed #cfd6de;
-          background: #fbfcfe; text-align: center; color: #5b6470;}
-  .empty b {color: #1b1f24;}
+  .evi {background: var(--secondary-background-color);
+        border-left: 3px solid rgba(128,128,128,.5); padding: 6px 12px;
+        border-radius: 0 6px 6px 0; color: var(--text-color);
+        font-size: .88rem; margin: 4px 0;}
+  .empty {padding: 46px 24px; border-radius: 14px;
+          border: 1px dashed rgba(128,128,128,.4);
+          background: var(--secondary-background-color);
+          text-align: center; color: var(--text-color);}
+  .empty b {color: var(--text-color);}
 </style>
 """
 
@@ -90,8 +106,12 @@ def metrics_df(metrics):
     return pd.DataFrame(rows)
 
 
-def _delta(cur, prev, higher_is_better=True):
-    """返回 (文本, css 类)：用于指标卡上的同比变化。"""
+def _delta(cur, prev, higher_is_better=True, is_pct=False):
+    """返回 (文本, css 类)：用于指标卡上的同比变化。
+
+    is_pct=True 的指标（资产负债率、毛利率等）本身已是百分比，
+    同比应显示**百分点**变化，否则 66.7%→76.0% 会被显示成「涨了 14.0%」，误导读者。
+    """
     if cur is None or prev is None:
         return "", "flat"
     diff = cur - prev
@@ -99,7 +119,13 @@ def _delta(cur, prev, higher_is_better=True):
         return ("持平", "flat")
     arrow = "▲" if diff > 0 else "▼"
     good = (diff > 0) == higher_is_better
-    cls = "down" if good else "up"     # 红涨绿跌按"好/坏"着色，不按数字正负
+    cls = "down" if good else "up"     # 红=变差、绿=变好，按"好坏"着色而非数字正负
+    if is_pct:
+        return (f"{arrow} {abs(diff) * 100:.1f} 个百分点", cls)
+    # 比率类指标跨零时（如净现比 0.27 → −0.60），"变化百分之多少"没有意义
+    # （会出现「▼325.0%」这种读不懂的数字），改为直说方向转变。
+    if (prev < 0) != (cur < 0):
+        return ("由正转负" if cur < 0 else "由负转正", cls)
     if abs(prev) > 1e-9 and abs(prev) < 1e6:
         return (f"{arrow} {abs(diff)/abs(prev):.1%} 较上期", cls)
     return (f"{arrow} {abs(diff):,.0f} 较上期", cls)
@@ -109,7 +135,6 @@ def _hero(company, industry, level, metrics, warnings):
     years = sorted(metrics.keys())
     latest, prev = metrics[years[-1]], (metrics[years[-2]] if len(years) > 1 else None)
     badge = _LEVEL_BADGE.get(level, "badge-watch")
-    st.markdown(_CSS, unsafe_allow_html=True)
     st.markdown(
         f"""<div class="hero">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -129,18 +154,18 @@ def _hero(company, industry, level, metrics, warnings):
 
     st.write("")
     cards = [
-        ("资产负债率", latest.get("资产负债率"), prev.get("资产负债率") if prev else None, False, ""),
-        ("毛利率", latest.get("毛利率"), prev.get("毛利率") if prev else None, True, ""),
-        ("净利率", latest.get("净利率"), prev.get("净利率") if prev else None, True, ""),
-        ("净现比", latest.get("净现比"), prev.get("净现比") if prev else None, True, ""),
+        ("资产负债率", latest.get("资产负债率"), prev.get("资产负债率") if prev else None, False, True),
+        ("毛利率", latest.get("毛利率"), prev.get("毛利率") if prev else None, True, True),
+        ("净利率", latest.get("净利率"), prev.get("净利率") if prev else None, True, True),
+        ("净现比", latest.get("净现比"), prev.get("净现比") if prev else None, True, False),
     ]
     cols = st.columns(4)
-    for col, (label, cur, pre, hib, unit) in zip(cols, cards):
-        txt, cls = _delta(cur, pre, hib)
+    for col, (label, cur, pre, hib, is_pct) in zip(cols, cards):
+        txt, cls = _delta(cur, pre, hib, is_pct)
         col.markdown(
             f"""<div class="card">
                   <div class="card-label">{label}</div>
-                  <div class="card-value">{_fmt_metric(label, cur)}{unit}</div>
+                  <div class="card-value">{_fmt_metric(label, cur)}</div>
                   <div class="card-delta {cls}">{txt or "&nbsp;"}</div>
                 </div>""",
             unsafe_allow_html=True)
@@ -221,6 +246,9 @@ def render(result):
 st.title("📑 明鉴 · 企业财务尽调与风险研判 Agent")
 st.caption("上传一份标的公司年报，自动完成解析、指标计算、规则匹配与风险研判，"
            "输出一份**可解释**的尽调初筛报告。")
+# 样式必须在**每次渲染**都注入：空状态、侧栏、结果页都要用，
+# 曾因把它写在 _hero() 里，导致未运行时的空状态卡片完全没有样式。
+st.markdown(_CSS, unsafe_allow_html=True)
 
 with st.sidebar:
     st.markdown("### 数据源")
@@ -269,11 +297,12 @@ if "result" in st.session_state:
     st.download_button("⬇️ 下载完整报告 (Markdown)", st.session_state["report"],
                        file_name=f"{st.session_state['cname']}_尽调报告.md")
 else:
+    # 单行 HTML：Streamlit 的 markdown 渲染对多行 HTML 块不可靠（缩进/空行会截断标签）
     st.markdown(
-        """<div class="empty">
-             <div style="font-size:2rem;">🔎</div>
-             <p><b>尚未运行尽调</b></p>
-             <p>在左侧选择「使用样例」或「上传财报 PDF」，然后点击 <b>运行尽调</b>。<br/>
-                样例无需任何配置即可跑通完整闭环。</p>
-           </div>""",
+        '<div class="empty">'
+        '<div style="font-size:2.2rem;line-height:1.2;">🔎</div>'
+        '<p style="font-size:1.05rem;margin:6px 0 2px;"><b>尚未运行尽调</b></p>'
+        '<p>在左侧选择「使用样例」或「上传财报 PDF」，然后点击 <b>运行尽调</b>。<br/>'
+        '样例无需任何配置即可跑通完整闭环。</p>'
+        '</div>',
         unsafe_allow_html=True)

@@ -629,6 +629,117 @@ def test_scale_check_ignores_non_power_of_ten_gap():
     assert check_scale(ref, None) == []
 
 
+# ── 界面冒烟测试（用桩替换 streamlit，不依赖真实运行环境）──
+def _load_app(click_run=False):
+    """加载 app.py，用桩替换 streamlit。返回 (module, 调用记录, st桩)。
+
+    控件类桩必须返回与真实控件**语义一致**的值：radio/selectbox 返回首个选项、
+    button 返回布尔、file_uploader 返回 None。否则页面会被带到错误分支上
+    （踩过：button 桩返回真值对象 → 误入「上传 PDF」分支 → 在 getvalue() 上炸）。
+    """
+    import importlib.util
+    import sys
+    import types
+
+    calls = []
+
+    class _Ctx:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def __getattr__(self, name):
+            def _f(*a, **k):
+                calls.append(name)
+            return _f
+
+    st = types.ModuleType("streamlit")
+
+    def _rec(name):
+        """显示类桩：记录调用名并返回上下文管理器。"""
+        def _f(*a, **k):
+            calls.append(name)
+            return _Ctx()
+        return _f
+
+    for fn in ("set_page_config", "title", "caption", "markdown", "write", "divider",
+               "warning", "success", "info", "error", "dataframe", "download_button",
+               "stop", "spinner", "expander", "subheader", "text"):
+        setattr(st, fn, _rec(fn))
+    st.radio = lambda label, options, **k: options[0] if options else None
+    st.selectbox = lambda label, options, **k: options[0] if options else None
+    st.checkbox = lambda *a, **k: False          # 不调模型，走纯规则路径
+    st.button = lambda *a, **k: click_run
+    st.file_uploader = lambda *a, **k: None
+    st.columns = lambda n=1, **k: [_Ctx() for _ in range(n if isinstance(n, int) else len(n))]
+    st.tabs = lambda names, **k: [_Ctx() for _ in names]
+    st.session_state = {}
+    st.sidebar = _Ctx()
+
+    app_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "app.py")
+    saved = sys.modules.get("streamlit")
+    sys.modules["streamlit"] = st
+    try:
+        spec = importlib.util.spec_from_file_location(f"app_under_test_{click_run}", app_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        if saved is not None:
+            sys.modules["streamlit"] = saved
+        else:
+            sys.modules.pop("streamlit", None)
+    return mod, calls, st
+
+
+@case
+def test_app_renders_empty_and_result_states():
+    """UI 冒烟：空状态与结果页两条路径都要能跑通。
+
+    回归来源：把指标卡同比改成百分点时，循环变量 unit 换成 is_pct，
+    但 f-string 里残留 {unit}，点击「运行尽调」即 NameError。
+    语法检查（ast.parse）发现不了，只有真正执行渲染才行。
+    """
+    try:
+        import pandas  # noqa: F401
+    except ImportError:
+        return "skip: 未安装 pandas"
+
+    # ① 空状态（未点击运行）
+    _, calls, st1 = _load_app(click_run=False)
+    assert calls, "空状态也应产生渲染调用"
+    assert "result" not in st1.session_state
+
+    # ② 结果页（模拟点击「运行尽调」：样例数据 + 纯规则 → 完整渲染）
+    _, calls2, st2 = _load_app(click_run=True)
+    assert "result" in st2.session_state, "点击运行后应写入结果"
+    assert st2.session_state["result"]["rules"], "样例应命中风险规则"
+    assert calls2, "结果页应产生渲染调用"
+
+
+@case
+def test_delta_shows_percentage_points_and_sign_flip():
+    """指标卡同比口径：百分比类用「个百分点」，跨零的比率直说方向转变。"""
+    try:
+        import pandas  # noqa: F401
+    except ImportError:
+        return "skip: 未安装 pandas"
+
+    mod, _calls, _st = _load_app(click_run=False)
+    # 66.7% → 76.0% 应显示 9.3 个百分点，而不是「涨了 14.0%」
+    txt, cls = mod._delta(0.760, 0.667, higher_is_better=False, is_pct=True)
+    assert "9.3 个百分点" in txt, txt
+    assert cls == "up", cls                 # 负债率上升 = 变差 = 红
+    # 净现比 0.27 → −0.60 跨零，不应给出百分比变化
+    txt2, _ = mod._delta(-0.60, 0.27, higher_is_better=True)
+    assert txt2 == "由正转负", txt2
+    # 普通比率仍用相对变化
+    txt3, _ = mod._delta(1.20, 1.00, higher_is_better=True)
+    assert "20.0%" in txt3, txt3
+
+
 def main():
     passed = failed = 0
     for fn in CASES:
