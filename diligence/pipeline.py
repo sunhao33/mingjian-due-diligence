@@ -30,5 +30,6 @@ def run_diligence(company, use_llm=True):
         "narrative": narrative,
         "warnings": warnings,
         "trace": company.get("_trace"),
+        "source": company.get("_source"),      # 数据来源/公告出处，供界面展示
     }
     return report, result

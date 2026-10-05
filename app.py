@@ -220,6 +220,18 @@ def render(result):
     level = result["risk_level"]
     _hero(result["company"], result["industry"], level,
           result["metrics"], result.get("warnings"))
+    # 数据来源与公告出处：界面也要能看到，而不是只在下载的报告里
+    # 注意 result["company"] 是公司名（字符串），公司字典里的 _source 由 pipeline 透传为 result["source"]
+    src = result.get("source")
+    if src:
+        used = src.get("pages_used") or ["—", "—"]
+        bits = [f"共 {src.get('pages_total', '—')} 页",
+                f"自动定位第 {used[0]}–{used[1]} 页"]
+        if src.get("rounds"):
+            bits.append(f"抽取 {src['rounds']} 轮")
+        st.caption(f"📄 数据来源：{src.get('file', '—')}（{'，'.join(bits)}）")
+        if src.get("origin"):
+            st.caption(f"🔗 公告出处：{src['origin']}")
     _render_warnings(result.get("warnings"))
 
     st.write("")
@@ -304,24 +316,34 @@ with st.sidebar:
     elif source == "输入股票代码":
         from diligence import areport
 
-        _code_in = st.text_input("股票代码", placeholder="如 000002 / 600519",
-                                 help="沪深两市 6 位代码；自动获取最新年度报告")
-        if st.button("查询最新年报", use_container_width=True):
+        def _query(code_text):
+            """查询并记住选中的年报；失败时清空选择并给出可读原因。"""
             try:
-                _reps = areport.list_annual_reports(areport.normalize_code(_code_in))
-                st.session_state["ann_pick"] = _reps[0]
+                code = areport.normalize_code(code_text)
+                st.session_state["ann_pick"] = areport.list_annual_reports(code)[0]
                 st.session_state.pop("ann_meta", None)   # 换了标的后丢弃旧记录
             except areport.ReportSourceError as e:
                 st.session_state.pop("ann_pick", None)
                 st.error(str(e))
+
+        _code_in = st.text_input("股票代码", placeholder="如 000002 / 600519",
+                                 help="沪深两市 6 位代码；自动获取最新年度报告")
+        if st.button("查询最新年报", use_container_width=True):
+            _query(_code_in)
+        # 快捷选择：演示时一点即可，省去输入
+        st.caption("或直接选：")
+        for _col, (_c, _n) in zip(st.columns(3),
+                                  (("000002", "万科A"), ("000333", "美的集团"),
+                                   ("600519", "贵州茅台"))):
+            if _col.button(_n, use_container_width=True, key=f"quick_{_c}"):
+                _query(_c)
         _pick = st.session_state.get("ann_pick")
         if _pick:
             st.success(f"已找到：{_pick['title']}")
             st.caption(f"{_pick['date']} 公告 · {areport.market_of(_pick['code'])} · "
                        f"点「运行尽调」下载并解析")
         else:
-            st.caption("先填写代码并点「查询最新年报」。取数失败时"
-                       "可改用「上传财报 PDF」——该路径不依赖任何外部接口。")
+            st.caption("取数失败时可改用「上传财报 PDF」——该路径不依赖任何外部接口。")
     else:
         uploaded = st.file_uploader("上传财报 PDF", type=["pdf"])
         st.caption("扫描件需先自行 OCR。")
