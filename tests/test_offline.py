@@ -672,6 +672,7 @@ def _load_app(click_run=False):
     st.selectbox = lambda label, options, **k: options[0] if options else None
     st.checkbox = lambda *a, **k: False          # 不调模型，走纯规则路径
     st.toggle = lambda *a, **k: False            # 深浅色开关：默认浅色
+    st.text_input = lambda *a, **k: ""           # API Key 输入框：默认留空
     st.button = lambda *a, **k: click_run
     st.file_uploader = lambda *a, **k: None
     st.rerun = lambda *a, **k: None

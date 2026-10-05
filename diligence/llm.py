@@ -7,15 +7,32 @@ import json
 from . import config
 
 _client = None
+_client_key = None
+
+
+def reset_client():
+    """丢弃已缓存的客户端，使下次调用按当前配置重建。
+
+    界面允许在会话内临时填入 API Key，填入后必须让旧客户端失效，
+    否则会继续用启动时的那把 key（或继续处于未配置状态）。
+    """
+    global _client, _client_key
+    _client = None
+    _client_key = None
 
 
 def get_client():
-    global _client
-    if _client is None and config.llm_available():
-        from openai import OpenAI
+    global _client, _client_key
+    if not config.llm_available():
+        return None
+    # key 变了就重建（支持界面里临时填写/更换 key）
+    if _client is not None and _client_key == config.DEEPSEEK_API_KEY:
+        return _client
+    from openai import OpenAI
 
-        _client = OpenAI(api_key=config.DEEPSEEK_API_KEY,
-                         base_url=config.DEEPSEEK_BASE_URL)
+    _client = OpenAI(api_key=config.DEEPSEEK_API_KEY,
+                     base_url=config.DEEPSEEK_BASE_URL)
+    _client_key = config.DEEPSEEK_API_KEY
     return _client
 
 

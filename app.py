@@ -12,6 +12,7 @@ import tempfile
 import pandas as pd
 import streamlit as st
 
+from diligence import config
 from diligence.pipeline import run_diligence
 from diligence.sample_data import SAMPLES
 # 注意：diligence.extract 会拉起 pdfplumber，只在真正要解析 PDF 时再导入
@@ -296,11 +297,37 @@ with st.sidebar:
         st.caption("内置样例为虚构数据，用于演示完整闭环。")
     else:
         uploaded = st.file_uploader("上传财报 PDF", type=["pdf"])
-        st.caption("需配置 API Key；扫描件需先自行 OCR。")
+        st.caption("扫描件需先自行 OCR。")
+
+    # ── 模型配置（可选）──────────────────────────────────────
+    # 刻意不做成「必须填 Key 才能用」：不填也能跑完整流程（规则抽取 + 规则汇总），
+    # 填了才能用大模型读取真实年报并生成归因叙述。
+    _llm_ready = config.llm_available()
+    with st.expander(("⚙️ 模型配置" + ("（已就绪）" if _llm_ready else "（可选）")),
+                     expanded=False):
+        if _llm_ready:
+            st.success(f"已配置：{config.DEEPSEEK_MODEL}")
+        else:
+            st.info("未配置 —— 当前为**纯规则模式**，全部功能仍可用")
+        typed = st.text_input("DeepSeek API Key", type="password", key="api_key_input",
+                              placeholder="sk-...",
+                              help="仅在本次会话内存中使用，不写入磁盘；"
+                                   "留空则读取环境变量 / .env")
+        if typed and typed.strip() != config.DEEPSEEK_API_KEY:
+            from diligence.llm import reset_client
+
+            config.DEEPSEEK_API_KEY = typed.strip()
+            reset_client()          # 让旧客户端失效，下次调用按新 key 重建
+            st.caption("✅ 本次会话已启用（关闭页面即失效）")
+        st.caption("不填也能跑完整流程（真实年报走规则解析、研判走规则汇总）；"
+                   "填了才能用大模型抽取并生成归因叙述。")
 
     st.divider()
     run = st.button("运行尽调", type="primary", use_container_width=True)
-    st.caption("纯规则模式不调用任何模型，可离线运行。")
+    if _llm_ready:
+        st.caption("真实年报将走大模型抽取 + **自校正闭环**。")
+    else:
+        st.caption("纯规则模式不调用任何模型，可离线运行。")
 
 if run:
     if source == "使用样例":
