@@ -43,6 +43,9 @@ def build_report(company, metrics, rules, narrative=None, warnings=None):
         lines.append(f"- **数据来源**：{src.get('file', '年报 PDF')}"
                      f"（共 {src.get('pages_total', '—')} 页，自动定位第 {used[0]}–{used[1]} 页，"
                      f"抽取模型 {src.get('model', '—')}）")
+        if src.get("origin"):
+            # 由股票代码自动获取时，标注公告出处，便于复核（可追溯性原则）
+            lines.append(f"- **公告出处**：{src['origin']}")
     lines.append(f"- **生成日期**：{date.today().isoformat()}")
     lines.append(f"- **综合风险等级**：**{level}**")
     lines.append("")

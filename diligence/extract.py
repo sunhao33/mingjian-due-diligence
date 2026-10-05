@@ -149,12 +149,15 @@ def _extract_once(client, texts, hint, page_range):
     return _normalize(json.loads(resp.choices[0].message.content))
 
 
-def extract_from_pdf(pdf_path, self_correct=True, max_rounds=2):
+def extract_from_pdf(pdf_path, self_correct=True, max_rounds=2, origin=None):
     """PDF -> 结构化公司数据。需配置 DEEPSEEK_API_KEY。
 
     self_correct=True（默认）时启用抽取自校正闭环：每轮抽完先做数据自洽性校验，
     若有告警则由模型诊断成因并选择补救动作（补充提示 / 调整页区间 / 接受），
     最多补救 max_rounds 轮。轨迹记录在 company["_trace"]。
+
+    origin：数据出处说明（如「000002 万科A:2025年年度报告（2026-04-01 公告，
+    东方财富公告接口）」）。由股票代码自动获取年报时填入，会出现在报告的数据来源区。
     """
     client = get_client()
     if client is None:
@@ -206,4 +209,6 @@ def extract_from_pdf(pdf_path, self_correct=True, max_rounds=2):
         "model": config.DEEPSEEK_MODEL,
         "rounds": final["round"],
     }
+    if origin:
+        company["_source"]["origin"] = origin
     return company

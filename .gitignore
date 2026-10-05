@@ -19,3 +19,4 @@ out/
 
 # 数据文件（财报 PDF 等）
 data/*.pdf
+data/downloads/

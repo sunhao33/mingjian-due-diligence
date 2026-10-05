@@ -743,6 +743,110 @@ def test_delta_shows_percentage_points_and_sign_flip():
     assert "20.0%" in txt3, txt3
 
 
+# ── A 股年报获取（纯标准库，零依赖）──
+@case
+def test_areport_code_normalization():
+    """股票代码规范化：接受常见写法，拒绝非法输入。"""
+    from diligence.areport import ReportSourceError, normalize_code
+
+    assert normalize_code("000002") == "000002"
+    assert normalize_code("sz000002") == "000002"
+    assert normalize_code("000002.SZ") == "000002"
+    assert normalize_code("  600519  ") == "600519"
+    assert normalize_code("SH600519") == "600519"
+    for bad in ("abc", "12", "", None, "12345678"):
+        try:
+            normalize_code(bad)
+            raise AssertionError(f"{bad!r} 应被拒绝")
+        except ReportSourceError:
+            pass
+
+
+@case
+def test_areport_annual_title_filter():
+    """年报标题识别：必须排除半年报/季报/摘要/英文版/更正公告。
+
+    回归来源：初版用「'年度报告' in title」判断，
+    结果「2026年半年度报告」也被当成年度报告（前者是后者的子串）。
+    """
+    from diligence.areport import is_annual_report, year_of
+
+    assert is_annual_report("万科A:2025年年度报告")
+    assert year_of("万科A:2025年年度报告") == 2025
+    for bad in ("万科A:2026年半年度报告", "XX:2024年年度报告摘要",
+                "XX:2025年第三季度报告", "XX:2024年年度报告（英文版）",
+                "XX:关于2024年年度报告的更正公告", "XX:2024年年度报告已取消",
+                "XX:2024年年度报告补充公告", ""):
+        assert not is_annual_report(bad), f"{bad!r} 不该被当成年度报告"
+
+
+@case
+def test_areport_market_and_filename():
+    from diligence.areport import market_of, safe_filename
+
+    assert market_of("000002") == "深市"
+    assert market_of("600519") == "沪市"
+    assert market_of("300750") == "深市"
+    assert market_of("830799") == "北交所"
+    # 文件名不能含路径分隔符等非法字符
+    fn = safe_filename("000002 万科A:2025年年度报告")
+    assert "/" not in fn and "\\" not in fn and ":" not in fn
+    assert fn.endswith(".pdf")
+
+
+@case
+def test_areport_picks_latest_and_reports_missing():
+    """取数逻辑：在多次公告中选出最新年报；找不到时给出可读错误。"""
+    from diligence import areport
+
+    fake = {"data": {"list": [
+        {"title": "XX:2026年半年度报告", "notice_date": "2026-08-28 00:00:00",
+         "art_code": "A3"},
+        {"title": "XX:2025年年度报告", "notice_date": "2026-04-01 00:00:00",
+         "art_code": "A2"},
+        {"title": "XX:2025年第三季度报告", "notice_date": "2025-10-30 00:00:00",
+         "art_code": "A4"},
+    ]}}
+    saved = areport._get_json
+    try:
+        areport._get_json = lambda url, timeout=20: fake
+        reps = areport.list_annual_reports("000002")
+        assert len(reps) == 1, reps
+        assert reps[0]["year"] == 2025 and reps[0]["art_code"] == "A2", reps
+        # 没有年报时应抛出可读错误（供界面降级提示）
+        fake["data"]["list"] = [{"title": "XX:2026年半年度报告", "art_code": "A3"}]
+        try:
+            areport.list_annual_reports("000002")
+            raise AssertionError("应抛 ReportSourceError")
+        except areport.ReportSourceError as e:
+            assert "年度报告" in str(e)
+    finally:
+        areport._get_json = saved
+
+
+@case
+def test_report_shows_announcement_origin():
+    """按代码取年报时，报告须标出公告出处（可追溯性原则）。"""
+    from diligence.report import build_report
+
+    company = dict(SAMPLES["risky"])
+    company["_source"] = {
+        "file": "000002_万科A_2025年年度报告.pdf", "pages_total": 300,
+        "pages_used": [141, 162], "chars": 18400, "model": "deepseek-chat",
+        "origin": "000002 万科A:2025年年度报告（2026-04-01 公告，东方财富公告接口）",
+    }
+    metrics = compute_metrics(company)
+    hits = evaluate_rules(company, metrics)
+    rep = build_report(company, metrics, hits)
+    assert "公告出处" in rep, "按代码取数时必须标注公告出处"
+    assert "2026-04-01" in rep and "东方财富" in rep
+    # 手工上传 / 样例路径不应出现该行
+    rep2 = build_report(SAMPLES["risky"], compute_metrics(SAMPLES["risky"]),
+                        evaluate_rules(SAMPLES["risky"],
+                                       compute_metrics(SAMPLES["risky"])))
+    assert "公告出处" not in rep2
+
+
 def main():
     passed = failed = 0
     for fn in CASES:

@@ -26,6 +26,10 @@ _RATIO = {"流动比率", "速动比率", "应收账款周转率", "存货周转
           "利息保障倍数"}
 
 _SEVERITY_COLOR = {"高": "red", "中": "orange", "低": "blue"}
+
+# 按股票代码获取的年报缓存目录（.gitignore 已排除 data/downloads/，不会进版本库）
+_DL_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "data", "downloads"))
 # risk_level() 返回「高风险/中风险/关注/低风险」，与逐条风险的 severity 不是同一套取值
 _LEVEL_COLOR = {"高风险": "red", "中风险": "orange", "关注": "blue", "低风险": "green"}
 _LEVEL_BADGE = {"高风险": "badge-high", "中风险": "badge-mid",
@@ -287,7 +291,9 @@ with st.sidebar:
     st.divider()
 
     st.markdown("### 数据源")
-    source = st.radio("选择输入方式", ["使用样例", "上传财报 PDF"], label_visibility="collapsed")
+    source = st.radio("选择输入方式",
+                      ["使用样例", "输入股票代码", "上传财报 PDF"],
+                      label_visibility="collapsed")
     use_llm = st.checkbox("调用大模型进行风险研判", value=True,
                           help="未配置 DEEPSEEK_API_KEY 时自动降级为规则模式")
 
@@ -295,6 +301,27 @@ with st.sidebar:
         name = st.selectbox("样例", list(SAMPLES.keys()),
                             format_func=lambda k: SAMPLES[k]["company_name"])
         st.caption("内置样例为虚构数据，用于演示完整闭环。")
+    elif source == "输入股票代码":
+        from diligence import areport
+
+        _code_in = st.text_input("股票代码", placeholder="如 000002 / 600519",
+                                 help="沪深两市 6 位代码；自动获取最新年度报告")
+        if st.button("查询最新年报", use_container_width=True):
+            try:
+                _reps = areport.list_annual_reports(areport.normalize_code(_code_in))
+                st.session_state["ann_pick"] = _reps[0]
+                st.session_state.pop("ann_meta", None)   # 换了标的后丢弃旧记录
+            except areport.ReportSourceError as e:
+                st.session_state.pop("ann_pick", None)
+                st.error(str(e))
+        _pick = st.session_state.get("ann_pick")
+        if _pick:
+            st.success(f"已找到：{_pick['title']}")
+            st.caption(f"{_pick['date']} 公告 · {areport.market_of(_pick['code'])} · "
+                       f"点「运行尽调」下载并解析")
+        else:
+            st.caption("先填写代码并点「查询最新年报」。取数失败时"
+                       "可改用「上传财报 PDF」——该路径不依赖任何外部接口。")
     else:
         uploaded = st.file_uploader("上传财报 PDF", type=["pdf"])
         st.caption("扫描件需先自行 OCR。")
@@ -332,6 +359,27 @@ with st.sidebar:
 if run:
     if source == "使用样例":
         company = SAMPLES[name]
+    elif source == "输入股票代码":
+        from diligence import areport
+        from diligence.extract import extract_from_pdf
+
+        _pick = st.session_state.get("ann_pick")
+        if not _pick:
+            st.warning("请先填写股票代码并点「查询最新年报」")
+            st.stop()
+        _meta = st.session_state.get("ann_meta")
+        if not _meta or _meta.get("art_code") != _pick.get("art_code"):
+            try:
+                with st.spinner(f"正在下载《{_pick['title']}》…"):
+                    _path, _meta = areport.fetch_latest_annual(
+                        _pick["code"], _DL_DIR, year=_pick["year"])
+                st.session_state["ann_meta"] = _meta
+            except areport.ReportSourceError as e:
+                st.error(f"获取年报失败：{e}")
+                st.info("可改用「上传财报 PDF」——该路径不依赖任何外部接口。")
+                st.stop()
+        with st.spinner("正在定位报表页并调用模型抽取…"):
+            company = extract_from_pdf(_meta["path"], origin=areport.describe(_meta))
     else:
         if uploaded is None:
             st.warning("请先上传财报 PDF")
@@ -363,7 +411,8 @@ else:
         '<div class="empty">'
         '<div style="font-size:2.2rem;line-height:1.2;">🔎</div>'
         '<p style="font-size:1.05rem;margin:6px 0 2px;"><b>尚未运行尽调</b></p>'
-        '<p>在左侧选择「使用样例」或「上传财报 PDF」，然后点击 <b>运行尽调</b>。<br/>'
-        '样例无需任何配置即可跑通完整闭环。</p>'
+        '<p>左侧选数据源：<b>内置样例</b>（零配置即可跑通）、'
+        '<b>输入股票代码</b>（自动获取最新年报）或 <b>上传财报 PDF</b>，<br/>'
+        '然后点击 <b>运行尽调</b>。</p>'
         '</div>',
         unsafe_allow_html=True)
