@@ -671,8 +671,10 @@ def _load_app(click_run=False):
     st.radio = lambda label, options, **k: options[0] if options else None
     st.selectbox = lambda label, options, **k: options[0] if options else None
     st.checkbox = lambda *a, **k: False          # 不调模型，走纯规则路径
+    st.toggle = lambda *a, **k: False            # 深浅色开关：默认浅色
     st.button = lambda *a, **k: click_run
     st.file_uploader = lambda *a, **k: None
+    st.rerun = lambda *a, **k: None
     st.columns = lambda n=1, **k: [_Ctx() for _ in range(n if isinstance(n, int) else len(n))]
     st.tabs = lambda names, **k: [_Ctx() for _ in names]
     st.session_state = {}

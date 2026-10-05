@@ -242,6 +242,25 @@ def render(result):
     st.caption("免责声明：本报告仅供研究参考，不构成投资建议。")
 
 
+def _apply_theme():
+    """按侧栏开关切换整站深浅色。
+
+    实现方式：修改 Streamlit 的 theme.base 配置并重跑。这样换肤是**整个应用**
+    （含侧栏、控件、表格、代码块）一起换，而不是只给自定义卡片套一层颜色。
+
+    注意：`st._config` 属内部接口，故做了兜底——失败时只在界面提示，
+    不影响其余功能（本机 Streamlit 1.65 实测可用）。
+    """
+    want = "dark" if st.session_state.get("theme_dark") else "light"
+    try:
+        if st._config.get_option("theme.base") != want:
+            st._config.set_option("theme.base", want)
+            return True
+    except Exception:  # noqa: BLE001
+        st.session_state["theme_unsupported"] = True
+    return False
+
+
 # ───────────────────────── 页面 ─────────────────────────
 st.title("📑 明鉴 · 企业财务尽调与风险研判 Agent")
 st.caption("上传一份标的公司年报，自动完成解析、指标计算、规则匹配与风险研判，"
@@ -250,7 +269,22 @@ st.caption("上传一份标的公司年报，自动完成解析、指标计算�
 # 曾因把它写在 _hero() 里，导致未运行时的空状态卡片完全没有样式。
 st.markdown(_CSS, unsafe_allow_html=True)
 
+# 首屏同步一次主题开关的实际状态（避免显示与实际主题不一致）
+if "theme_dark" not in st.session_state:
+    try:
+        st.session_state["theme_dark"] = (st._config.get_option("theme.base") == "dark")
+    except Exception:  # noqa: BLE001
+        st.session_state["theme_dark"] = False
+
 with st.sidebar:
+    st.toggle("🌙 深色模式", key="theme_dark",
+              help="一键切换深色 / 浅色，整个应用（含侧栏与表格）一起换肤")
+    if _apply_theme():
+        st.rerun()
+    if st.session_state.get("theme_unsupported"):
+        st.caption("（当前环境不支持运行时换肤，可用 `--theme.base` 启动参数切换）")
+    st.divider()
+
     st.markdown("### 数据源")
     source = st.radio("选择输入方式", ["使用样例", "上传财报 PDF"], label_visibility="collapsed")
     use_llm = st.checkbox("调用大模型进行风险研判", value=True,
