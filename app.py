@@ -421,12 +421,25 @@ if run:
         report, result = run_diligence(company, use_llm=use_llm)
     st.session_state["result"] = result
     st.session_state["report"] = report
+    st.session_state["html"] = result.get("html", "")
     st.session_state["cname"] = company["company_name"]
 
 if "result" in st.session_state:
     render(st.session_state["result"])
-    st.download_button("⬇️ 下载完整报告 (Markdown)", st.session_state["report"],
-                       file_name=f"{st.session_state['cname']}_尽调报告.md")
+    st.write("")
+    _c = st.session_state["cname"]
+    _dl1, _dl2 = st.columns([3, 1])
+    with _dl1:
+        # HTML 为默认：任何人双击都能用浏览器打开，且可一键打印成 PDF
+        st.download_button("⬇️ 下载尽调报告（HTML，推荐 · 可打印为 PDF）",
+                           st.session_state["html"],
+                           file_name=f"{_c}_尽调报告.html", mime="text/html",
+                           type="primary", use_container_width=True)
+    with _dl2:
+        st.download_button("下载 Markdown（开发者）", st.session_state["report"],
+                           file_name=f"{_c}_尽调报告.md", use_container_width=True)
+    st.caption("HTML 报告为单文件、无外部依赖：双击用浏览器打开，"
+               "按 Ctrl+P 即可打印或另存为 PDF；Markdown 版供二次处理。")
 else:
     # 单行 HTML：Streamlit 的 markdown 渲染对多行 HTML 块不可靠（缩进/空行会截断标签）
     st.markdown(

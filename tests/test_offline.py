@@ -847,6 +847,78 @@ def test_report_shows_announcement_origin():
     assert "公告出处" not in rep2
 
 
+# ── HTML 报告（纯标准库，零依赖）──
+@case
+def test_html_report_is_self_contained_and_complete():
+    """HTML 报告：自包含（无外部资源）、含关键内容、可直接打印。"""
+    from diligence.html_report import render_html
+    from diligence.metrics import compute_metrics
+    from diligence.rules import evaluate_rules
+
+    company = SAMPLES["risky"]
+    metrics = compute_metrics(company)
+    rules = evaluate_rules(company, metrics)
+    doc = render_html(company, metrics, rules, narrative="测试研判。",
+                      warnings=[{"year": 2024, "name": "会计恒等式不符", "detail": "x"}])
+
+    assert doc.startswith("<!DOCTYPE html>") and doc.rstrip().endswith("</html>")
+    # 自包含：不得引用任何外部资源（离线/内网也能正常显示）
+    for bad in ("http://", "https://", "<script", "<link"):
+        assert bad not in doc, f"HTML 不应包含 {bad}"
+    # 关键内容
+    for key in ("综合风险等级", "关键财务指标", "风险清单", "通俗解释",
+                "判断依据", "数据自洽性校验", "不构成投资建议", "@media print"):
+        assert key in doc, f"报告缺少「{key}」"
+    assert company["company_name"] in doc
+    # 风险等级徽标样式与等级对应
+    assert "lv-" in doc
+
+
+@case
+def test_html_report_escapes_user_content():
+    """报告内容来自外部年报，必须转义，防止 HTML 注入。"""
+    from diligence.html_report import render_html
+    from diligence.metrics import compute_metrics
+
+    company = dict(SAMPLES["healthy"])
+    company["company_name"] = '<script>alert("x")</script>'
+    metrics = compute_metrics(company)
+    doc = render_html(company, metrics, [])
+    assert "<script>alert" not in doc, "公司名中的脚本必须被转义"
+    assert "&lt;script&gt;" in doc
+
+
+@case
+def test_html_report_plain_language_covers_rules():
+    """每条规则都应有通俗解释（写给非财务读者）——缺了要能发现。
+
+    注意：rules.py 里 hit(category, name, ...) 的**第一个参数是分类**，
+    规则名是第二个参数；只取第一个参数会得到「偿债/现金流/…」这类分类名。
+    """
+    from diligence.html_report import PLAIN
+
+    import re
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "diligence", "rules.py"), encoding="utf-8").read()
+    names = set(re.findall(r'hit\(\s*"[^"]+",\s*"([^"]+)"', src))
+    assert len(names) >= 15, f"规则名解析异常，只拿到 {len(names)} 条"
+    missing = sorted(n for n in names if n not in PLAIN)
+    assert not missing, f"以下风险缺少通俗解释：{missing}"
+    stale = sorted(k for k in PLAIN if k not in names)
+    assert not stale, f"通俗解释里这些名称已与规则对不上（可能改名了）：{stale}"
+
+
+@case
+def test_pipeline_result_has_html():
+    """主流程产物里必须同时带 Markdown 与 HTML 两种报告。"""
+    from diligence.pipeline import run_diligence
+
+    md, result = run_diligence(SAMPLES["risky"], use_llm=False)
+    assert md.startswith("# ")
+    assert result.get("html", "").startswith("<!DOCTYPE html>")
+    assert "综合风险等级" in result["html"]
+
+
 def main():
     passed = failed = 0
     for fn in CASES:

@@ -18,12 +18,17 @@ from diligence.pipeline import run_diligence
 from diligence import config
 
 
-def _save(report, out_dir, stem):
+def _save(report, out_dir, stem, html=None):
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"{stem}_report.md")
     with open(path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"[已保存] {path}")
+    if html:
+        hpath = os.path.join(out_dir, f"{stem}_尽调报告.html")
+        with open(hpath, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"[已保存] {hpath}  ← 浏览器双击即可打开，可 Ctrl+P 打印成 PDF")
 
 
 def main():
@@ -86,7 +91,7 @@ def main():
         print("=" * 60)
         print(report)
         if args.out:
-            _save(report, args.out, f"{code}_{pick['year']}")
+            _save(report, args.out, f"{code}_{pick['year']}", result.get("html"))
         return 0
 
     if args.pdf:
@@ -96,7 +101,7 @@ def main():
         print("=" * 60)
         print(report)
         if args.out:
-            _save(report, args.out, "pdf")
+            _save(report, args.out, "pdf", result.get("html"))
         return 0
 
     names = [args.name] if args.name else list(SAMPLES.keys())
@@ -113,7 +118,7 @@ def main():
         print()
 
         if args.out:
-            _save(report, args.out, name)
+            _save(report, args.out, name, result.get("html"))
 
 
 if __name__ == "__main__":
