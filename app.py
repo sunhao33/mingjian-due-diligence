@@ -25,13 +25,10 @@ _PCT = {"资产负债率", "毛利率", "净利率", "roe", "roa", "应收账款
 _RATIO = {"流动比率", "速动比率", "应收账款周转率", "存货周转率", "净现比",
           "利息保障倍数"}
 
-_SEVERITY_COLOR = {"高": "red", "中": "orange", "低": "blue"}
-
 # 按股票代码获取的年报缓存目录（.gitignore 已排除 data/downloads/，不会进版本库）
 _DL_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                        "data", "downloads"))
 # risk_level() 返回「高风险/中风险/关注/低风险」，与逐条风险的 severity 不是同一套取值
-_LEVEL_COLOR = {"高风险": "red", "中风险": "orange", "关注": "blue", "低风险": "green"}
 _LEVEL_BADGE = {"高风险": "badge-high", "中风险": "badge-mid",
                 "关注": "badge-watch", "低风险": "badge-low"}
 _LEVEL_EMOJI = {"高风险": "🔴", "中风险": "🟠", "关注": "🔵", "低风险": "🟢"}
@@ -136,7 +133,7 @@ def _delta(cur, prev, higher_is_better=True, is_pct=False):
     return (f"{arrow} {abs(diff):,.0f} 较上期", cls)
 
 
-def _hero(company, industry, level, metrics, warnings):
+def _hero(company, industry, level, metrics):
     years = sorted(metrics.keys())
     latest, prev = metrics[years[-1]], (metrics[years[-2]] if len(years) > 1 else None)
     badge = _LEVEL_BADGE.get(level, "badge-watch")
@@ -218,8 +215,7 @@ def _render_trace(result):
 
 def render(result):
     level = result["risk_level"]
-    _hero(result["company"], result["industry"], level,
-          result["metrics"], result.get("warnings"))
+    _hero(result["company"], result["industry"], level, result["metrics"])
     # 数据来源与公告出处：界面也要能看到，而不是只在下载的报告里
     # 注意 result["company"] 是公司名（字符串），公司字典里的 _source 由 pipeline 透传为 result["source"]
     src = result.get("source")
@@ -432,7 +428,7 @@ if "result" in st.session_state:
     with _dl1:
         # HTML 为默认：任何人双击都能用浏览器打开，且可一键打印成 PDF
         st.download_button("⬇️ 下载尽调报告（HTML，推荐 · 可打印为 PDF）",
-                           st.session_state["html"],
+                           st.session_state.get("html", ""),
                            file_name=f"{_c}_尽调报告.html", mime="text/html",
                            type="primary", use_container_width=True)
     with _dl2:

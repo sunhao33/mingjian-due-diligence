@@ -13,7 +13,7 @@
 
 import html
 
-_YI = "一二三四五六七八九十"
+from .rules import risk_level
 
 _LEVEL_CLASS = {"高风险": "lv-high", "中风险": "lv-mid",
                 "关注": "lv-watch", "低风险": "lv-low"}
@@ -152,11 +152,7 @@ def render_html(company, metrics, rules, narrative=None, warnings=None,
     name = company.get("company_name", "—")
     industry = company.get("industry", "—")
     src = company.get("_source") or {}
-    level = (rules[0].get("_level") if rules and rules[0].get("_level") else None)
-
-    # 风险等级：与 CLI/界面一致的判定
-    from .rules import risk_level
-    level = risk_level(rules)
+    level = risk_level(rules)          # 与命令行/界面共用同一判定，不要另算一套
 
     cards = [("资产负债率", False), ("毛利率", True), ("净利率", True), ("净现比", True)]
     card_html = []

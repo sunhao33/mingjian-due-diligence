@@ -41,7 +41,12 @@ curl -s http://127.0.0.1:8501/_stcore/health      # 期望输出 ok
 
 浏览器访问 `http://<服务器IP>:8501`。若云厂商有安全组，需放行 8501（或按方案 B 走 80/443）。
 
-需要大模型功能时，在仓库根目录放 `.env`（`DEEPSEEK_API_KEY=...`），并取消 `docker-compose.yml` 中 `env_file` 的注释。
+需要大模型功能时，在仓库根目录放 `.env`（内容为 `DEEPSEEK_API_KEY=sk-...`）后重启容器即可 ——
+`docker-compose.yml` 已配置 `env_file: ../.env` 自动注入。**`.env` 已被 `.dockerignore` 排除，不会进入镜像。**
+
+> 推荐直接用一键脚本：`bash deploy/deploy.sh`（不带 Key）或
+> `DEEPSEEK_API_KEY=sk-xxx bash deploy/deploy.sh`（带 Key）。
+> 脚本会确保 `.env` 一定存在（无 Key 时写占位内容），因为 `env_file` 指向的文件缺失会导致 compose 启动失败。
 
 ---
 

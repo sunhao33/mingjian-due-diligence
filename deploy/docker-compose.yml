@@ -7,9 +7,11 @@ services:
     container_name: mingjian
     ports:
       - "8501:8501"
-    # 需要大模型功能时，取消注释并准备好仓库根目录的 .env（内含 DEEPSEEK_API_KEY）
-    # env_file:
-    #   - ../.env
+    # 仓库根目录的 .env 会被注入容器（deploy.sh 会确保该文件一定存在，
+    # 无 API Key 时写入注释行，因此这里无需注释掉即可正常启动）。
+    # 注意：.env 已被 .dockerignore 排除，不会进镜像，只在运行时注入。
+    env_file:
+      - ../.env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health',timeout=4).read()==b'ok' else 1)"]

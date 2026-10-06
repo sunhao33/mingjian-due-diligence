@@ -1,6 +1,9 @@
 """从样例数据生成测试财报 PDF，用于验证「PDF -> 解析 -> 报告」全链路。
 
 用法：python scripts/gen_test_pdf.py risky  -> 输出 data/risky_report.pdf
+
+注意：这是**开发辅助脚本**，只用来造测试用 PDF，不参与应用运行。
+需要一个中文字体文件（脚本会在若干常见位置查找）。
 """
 import os
 import sys
@@ -11,7 +14,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from diligence.sample_data import SAMPLES  # noqa: E402
 
-FONT = r"C:\Windows\Fonts\simhei.ttf"
+# 跨平台查找中文字体：Windows / Linux / macOS 的常见路径。
+# 之所以不写死一个路径：仓库会被部署到 Linux 服务器上，写死 Windows 路径会直接报错。
+_FONT_CANDIDATES = [
+    r"C:\Windows\Fonts\simhei.ttf",
+    r"C:\Windows\Fonts\simsun.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+]
+
+
+def find_font():
+    for p in _FONT_CANDIDATES:
+        if os.path.exists(p):
+            return p
+    sys.exit("未找到可用的中文字体，请安装中文字体（如 fonts-noto-cjk），"
+             "或在本脚本的 _FONT_CANDIDATES 里补一个 .ttf 路径。\n"
+             "提示：fpdf2 对 .ttc 字体集的支持视版本而定，优先用 .ttf。")
+
+
+FONT = find_font()
 
 
 def _section(pdf, title):

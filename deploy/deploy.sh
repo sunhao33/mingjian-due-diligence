@@ -56,16 +56,25 @@ ENV_FILE="$REPO_DIR/.env"
 if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
   printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY" > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
-  ok "已写入 .env（含 API Key，权限 600）。评委访问时若无 Key 会自动降级为纯规则模式"
+  ok "已写入 .env（含 API Key，权限 600）"
 else
-  rm -f "$ENV_FILE"
-  warn "未提供 API Key —— 将以「纯规则模式」运行（全部功能可用，真实年报走规则解析）"
+  # 必须保留这个文件：docker-compose.yml 的 env_file 指向它，
+  # 文件缺失会导致 compose 直接启动失败（这一条踩过坑）。
+  printf '# 未配置 API Key —— 当前以纯规则模式运行（全部功能可用）\n# 需要大模型能力时，写入下面一行后重启容器：\n# DEEPSEEK_API_KEY=sk-xxx\n' > "$ENV_FILE"
+  warn "未提供 API Key —— 将以「纯规则模式」运行（已生成 .env 占位）"
 fi
 
 # ── 5. 构建并启动 ───────────────────────────────────────
 step "5/6 构建镜像并启动（首次约 2–5 分钟）"
 cd "$REPO_DIR/deploy"
 docker compose up -d --build || die "启动失败，请查看：docker compose logs"
+
+# 自检：镜像里绝不能有 .env（Dockerfile 有 COPY . .，靠 .dockerignore 拦住）
+if docker run --rm --entrypoint sh mingjian:latest -c 'test -f /app/.env' 2>/dev/null; then
+  warn "镜像内发现 /app/.env —— .dockerignore 未生效，密钥有泄露风险！"
+else
+  ok "镜像内不含 .env（.dockerignore 生效，密钥只在运行时注入）"
+fi
 
 step "等待服务就绪"
 for i in $(seq 1 40); do

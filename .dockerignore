@@ -1,0 +1,32 @@
+# 构建上下文排除项
+#
+# ⚠️ 关键：Dockerfile 里有 `COPY . .`，若不过滤，仓库根目录的 .env（内含
+#    DEEPSEEK_API_KEY）会被复制进镜像层——镜像一旦被推送或分享，密钥即泄露。
+#    此外 data/ 下的年报 PDF（每份 6MB+）、.git、__pycache__ 也会让镜像无谓膨胀。
+#
+# 保留：app.py、diligence/、tests/、deploy/（含 requirements-lock.txt）、
+#       .env.example（模板，供容器内参考）
+.env
+.env.local
+.env.*.local
+
+.git
+.gitignore
+.gitattributes
+.github/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pylibs/
+
+out/
+output/
+data/
+*.log
+
+.idea/
+.vscode/
+.DS_Store
