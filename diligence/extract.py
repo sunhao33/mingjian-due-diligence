@@ -194,6 +194,8 @@ def extract_with_fallback(pdf_path, origin=None, company_name=None,
         reason = friendly_reason(e)
         company, _rep = extract_by_rules(pdf_path, company_name=company_name,
                                         industry=industry, origin=origin)
+        # 标记模型不可用：下游（如风险研判）据此跳过调用，省掉一次注定失败的往返
+        company["_llm_unavailable"] = reason
         return company, reason
 
 

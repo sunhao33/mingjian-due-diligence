@@ -1044,6 +1044,33 @@ def test_rule_parser_handles_direction_annotated_row_names():
     assert _claim("投资活动产生/(使用)的现金流量净额 25,340,273 (87,901,802)") is None
 
 
+@case
+def test_pipeline_survives_narrative_failure():
+    """归因叙述调用失败时，报告仍须完整产出，并把原因带回 result。
+
+    回归来源：给「抽取」加了降级却漏了「研判」，Key 失效时抽取降级成功、
+    下一步却在 llm.summarize_risks 上抛 401 崩掉，整份报告出不来。
+    """
+    from diligence import llm
+    from diligence.pipeline import run_diligence
+
+    def _boom(*a, **k):
+        raise RuntimeError("AuthenticationError: 401 invalid api key")
+
+    saved = llm.summarize_risks
+    try:
+        llm.summarize_risks = _boom
+        report, result = run_diligence(SAMPLES["risky"], use_llm=True)
+    finally:
+        llm.summarize_risks = saved
+
+    assert report.startswith("# "), "报告必须照常产出"
+    assert result["rules"], "规则结果不受影响"
+    assert result["narrative"] is None
+    assert result["llm_error"] and "无效或已过期" in result["llm_error"], result["llm_error"]
+    assert result["html"].startswith("<!DOCTYPE html>")
+
+
 def main():
     passed = failed = 0
     for fn in CASES:

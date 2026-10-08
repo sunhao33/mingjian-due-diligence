@@ -441,6 +441,7 @@ if run:
 
 if "result" in st.session_state:
     _notice = st.session_state.get("extract_notice")
+    _llm_err = (st.session_state.get("result") or {}).get("llm_error")
     if _notice:
         st.warning(
             f"⚠️ **未能调用大模型（{_notice}），已自动降级为规则抽取**\n\n"
@@ -451,6 +452,10 @@ if "result" in st.session_state:
             f"3. 风险研判为规则汇总，非模型归因。\n\n"
             f"如需完整能力：在侧栏「⚙️ 模型配置」填入有效的 DeepSeek API Key 后重新运行。"
         )
+    elif _llm_err:
+        # 只影响归因叙述这一段，其余（指标、规则、清单）不受影响
+        st.info(f"ℹ️ 风险研判未能调用大模型（{_llm_err}），已改为规则汇总。"
+                f"指标计算、规则判定与证据链不受影响。")
     render(st.session_state["result"])
     st.write("")
     _c = st.session_state["cname"]

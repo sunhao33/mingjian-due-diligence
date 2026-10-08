@@ -122,6 +122,8 @@ def main():
         company = SAMPLES[name]
         use_llm = not args.no_llm
         report, result = run_diligence(company, use_llm=use_llm)
+        if result.get("llm_error"):
+            print(f"[提示] 风险研判未能调用大模型（{result['llm_error']}），已改为规则汇总。")
         print("=" * 60)
         print(report)
         print()
