@@ -19,6 +19,11 @@ from diligence.sample_data import SAMPLES
 
 st.set_page_config(page_title="明鉴 · 财务尽调 Agent", page_icon="📑", layout="wide")
 
+# 构建标记：每次部署代码后更新，用于一眼确认「线上到底跑的是哪一版」。
+# 之所以需要它：推送成功 ≠ 线上已重建，而 Streamlit Cloud 的构建状态没有接口可查，
+# 只能靠在页面上留一个可见的版本号来核对。
+_BUILD = "2026-10-08.2"
+
 _PCT = {"资产负债率", "毛利率", "净利率", "roe", "roa", "应收账款占营收比",
         "商誉占净资产比", "货币资金占总资产比", "有息负债占总资产比",
         "营收增长率", "净利润增长率"}
@@ -383,6 +388,7 @@ with st.sidebar:
         st.caption("真实年报将走大模型抽取 + **自校正闭环**。")
     else:
         st.caption("纯规则模式不调用任何模型，可离线运行。")
+    st.caption(f"构建版本 {_BUILD}")
 
 if run:
     if source == "使用样例":
