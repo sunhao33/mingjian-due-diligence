@@ -31,6 +31,9 @@ _DL_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)
 # risk_level() 返回「高风险/中风险/关注/低风险」，与逐条风险的 severity 不是同一套取值
 _LEVEL_BADGE = {"高风险": "badge-high", "中风险": "badge-mid",
                 "关注": "badge-watch", "低风险": "badge-low"}
+
+# 降级为规则抽取时可供选择的行业基准（对应 rules._debt_limit 的关键词分支）
+_FALLBACK_INDUSTRIES = ["制造业", "房地产", "建筑", "食品饮料", "银行/金融"]
 _LEVEL_EMOJI = {"高风险": "🔴", "中风险": "🟠", "关注": "🔵", "低风险": "🟢"}
 
 _CSS = """
@@ -344,6 +347,13 @@ with st.sidebar:
         uploaded = st.file_uploader("上传财报 PDF", type=["pdf"])
         st.caption("扫描件需先自行 OCR。")
 
+    if source in ("输入股票代码", "上传财报 PDF"):
+        # 行业只影响"资产负债率偏高"的参考线；大模型会从年报正文自动识别行业，
+        # 这个选择仅在模型不可用、降级为规则抽取时生效（届时报告会明确告警）。
+        st.selectbox("行业基准", _FALLBACK_INDUSTRIES, key="fallback_industry",
+                     help="大模型会从年报正文自动识别所属行业；"
+                          "若模型不可用而降级为规则抽取，则按这里的选择套用阈值")
+
     # ── 模型配置（可选）──────────────────────────────────────
     # 刻意不做成「必须填 Key 才能用」：不填也能跑完整流程（规则抽取 + 规则汇总），
     # 填了才能用大模型读取真实年报并生成归因叙述。
@@ -377,9 +387,10 @@ with st.sidebar:
 if run:
     if source == "使用样例":
         company = SAMPLES[name]
+        st.session_state["extract_notice"] = None
     elif source == "输入股票代码":
         from diligence import areport
-        from diligence.extract import extract_from_pdf
+        from diligence.extract import extract_with_fallback
 
         _pick = st.session_state.get("ann_pick")
         if not _pick:
@@ -396,20 +407,28 @@ if run:
                 st.error(f"获取年报失败：{e}")
                 st.info("可改用「上传财报 PDF」——该路径不依赖任何外部接口。")
                 st.stop()
-        with st.spinner("正在定位报表页并调用模型抽取…"):
-            company = extract_from_pdf(_meta["path"], origin=areport.describe(_meta))
+        with st.spinner("正在定位报表页并抽取…"):
+            # 大模型不可用（无 Key / Key 失效 / 断网）时自动降级为规则抽取，不中断流程
+            company, _notice = extract_with_fallback(
+                _meta["path"], origin=areport.describe(_meta),
+                company_name=areport.company_name_of(_pick.get("title", "")),
+                industry=st.session_state.get("fallback_industry", "制造业"))
+        st.session_state["extract_notice"] = _notice
     else:
         if uploaded is None:
             st.warning("请先上传财报 PDF")
             st.stop()
-        from diligence.extract import extract_from_pdf
+        from diligence.extract import extract_with_fallback
 
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             f.write(uploaded.getvalue())
             pdf_path = f.name
         try:
-            with st.spinner("正在定位报表页并调用模型抽取…"):
-                company = extract_from_pdf(pdf_path)
+            with st.spinner("正在定位报表页并抽取…"):
+                company, _notice = extract_with_fallback(
+                    pdf_path, company_name=os.path.splitext(uploaded.name)[0],
+                    industry=st.session_state.get("fallback_industry", "制造业"))
+            st.session_state["extract_notice"] = _notice
         finally:
             os.unlink(pdf_path)  # 临时文件用后即删，避免残留财报底稿
 
@@ -421,6 +440,17 @@ if run:
     st.session_state["cname"] = company["company_name"]
 
 if "result" in st.session_state:
+    _notice = st.session_state.get("extract_notice")
+    if _notice:
+        st.warning(
+            f"⚠️ **未能调用大模型（{_notice}），已自动降级为规则抽取**\n\n"
+            f"数据仍从年报原文解析，但三点差异需知悉：\n"
+            f"1. **行业基准为假设值**：「{st.session_state.get('fallback_industry', '制造业')}」"
+            f"（模型能从年报正文自动识别行业，规则抽取做不到）；\n"
+            f"2. **抽取自校正闭环未生效**（该闭环依赖模型诊断）；\n"
+            f"3. 风险研判为规则汇总，非模型归因。\n\n"
+            f"如需完整能力：在侧栏「⚙️ 模型配置」填入有效的 DeepSeek API Key 后重新运行。"
+        )
     render(st.session_state["result"])
     st.write("")
     _c = st.session_state["cname"]

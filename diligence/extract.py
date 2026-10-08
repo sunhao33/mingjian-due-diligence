@@ -130,6 +130,73 @@ def diagnose_pdf(pdf_path):
     return diag
 
 
+def friendly_reason(exc):
+    """把模型调用异常翻译成用户看得懂、且能据以行动的一句话。"""
+    name = type(exc).__name__
+    text = str(exc)
+    if "AuthenticationError" in name or "401" in text:
+        return "API Key 无效或已过期"
+    if "RateLimit" in name or "429" in text:
+        return "调用频率或额度超限"
+    if "APIConnection" in name or "Timeout" in name or "Connection" in name:
+        return "网络无法访问模型服务"
+    if "Insufficient" in text or "402" in text:
+        return "账户余额不足"
+    if "未配置" in text:
+        return "未配置 API Key"
+    return f"模型调用失败（{name}）"
+
+
+def extract_by_rules(pdf_path, company_name=None, industry="制造业", origin=None):
+    """纯规则抽取，不调用任何模型。
+
+    用于三种情况：没有 API Key、Key 失效、网络不可达。
+    代价是行业只能"假设"：规则抽取无法像模型那样从年报正文读出所属行业，
+    因此按传入的 industry 套用阈值，并在数据校验里留下一条显式告警。
+    """
+    from .parse_lines import parse_company
+
+    with pdfplumber.open(pdf_path) as pdf:
+        texts = _page_texts(pdf)
+
+    name = company_name or os.path.splitext(os.path.basename(pdf_path))[0]
+    company, rep = parse_company(texts, name, industry)
+
+    src = dict(company.get("_source") or {})
+    src.update({"file": os.path.basename(pdf_path), "pages_total": len(texts),
+                "model": "规则抽取（未使用大模型）", "rounds": 1})
+    if origin:
+        src["origin"] = origin
+    company["_source"] = src
+
+    # 让报告显式说明"行业基准是假设值"，避免读者把阈值当成事实
+    warns = list(company.get("_warnings") or [])
+    warns.append({
+        "year": None, "name": "行业基准为假设值",
+        "detail": f"本次未使用大模型，无法从年报正文识别所属行业，规则阈值按"
+                  f"「{industry}」套用；若行业不符，请在界面选择正确行业后重跑",
+    })
+    company["_warnings"] = warns
+    return company, rep
+
+
+def extract_with_fallback(pdf_path, origin=None, company_name=None,
+                          industry="制造业", self_correct=True, max_rounds=2):
+    """优先大模型抽取；模型不可用时**自动降级为规则抽取**，保证仍能出报告。
+
+    返回 (company, notice)：notice 为 None 表示走的是大模型路径；否则是可读的
+    降级原因，供界面提示用户（并指引其更新 Key 或改选行业）。
+    """
+    try:
+        return extract_from_pdf(pdf_path, self_correct=self_correct,
+                                max_rounds=max_rounds, origin=origin), None
+    except Exception as e:  # noqa: BLE001
+        reason = friendly_reason(e)
+        company, _rep = extract_by_rules(pdf_path, company_name=company_name,
+                                        industry=industry, origin=origin)
+        return company, reason
+
+
 def _extract_once(client, texts, hint, page_range):
     """单轮抽取：按页区间取文 → 组装提示词（可带补救提示）→ 调模型 → 归一化。"""
     start, end = page_range

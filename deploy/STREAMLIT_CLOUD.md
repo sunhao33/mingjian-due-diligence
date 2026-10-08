@@ -41,11 +41,13 @@ Streamlit Community Cloud 是官方免费托管，专为 Streamlit 应用设计�
 
 ---
 
-## 三、必须先修一处：API Key 的读取方式
+## 三、API Key 的读取方式（已修复，此处仅作记录）
+
+> **状态：已修复并推送（提交 `4f6ad0b`）。部署时不需要再改代码。**
 
 ### 问题
 
-`diligence/config.py` 目前这样读配置：
+`diligence/config.py` 原来只用 `os.getenv` 读配置：
 
 ```python
 from dotenv import load_dotenv
@@ -61,76 +63,30 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 > When developing locally, you can use `st.secrets` in your code to read
 > secrets from a `.streamlit/secrets.toml` file.
 
-所以按现状部署，**「风险研判」这一段 AI 摘要会静默缺失**（页面不报错，
+所以按原样部署，**「风险研判」这一段 AI 摘要会静默缺失**（页面不报错，
 只是没有那一段），排查起来很费时间。
 
-> 好消息：项目本身做了优雅降级 —— `summarize_risks()` 在无 Key 时返回 `None`，
+> 项目本身做了优雅降级 —— `summarize_risks()` 在无 Key 时返回 `None`，
 > 数值计算与规则判定完全不受影响。所以**部署不会失败**，只是少了 AI 那段。
 
-### 修复
+### 修复内容
 
-**用 `deploy/config.py.streamlit-cloud` 覆盖 `diligence/config.py`** ——
-该文件已按下面内容写好，并在三种环境下实测通过（见本节末尾）。
+`_secret()` 先查 `st.secrets`，取不到再回落 `os.getenv`；`load_dotenv`
+放进 `try/except`，缺 `python-dotenv` 时静默跳过 —— 与原项目
+「纯规则模式允许不装 dotenv」的降级设计一致。
 
-```python
-"""加载环境配置。
-
-两条读取路径都要支持，因为本地和云端拿密钥的方式不同：
-  · 本地开发：.env 文件 -> python-dotenv 写入环境变量
-  · Streamlit Community Cloud：控制台的 Secrets -> **只进 st.secrets**，
-    不会变成环境变量（官方文档明确说明）
-
-原来只用 os.getenv，因此在云端读不到 key —— 页面不报错，只是
-「风险研判」那一段静默缺失，排查起来很费时间。
-"""
-import os
-
-
-def _secret(name, default=""):
-    """优先 st.secrets，其次环境变量。"""
-    try:
-        import streamlit as st
-        if name in st.secrets:
-            return st.secrets[name]
-    except Exception:
-        # 纯命令行模式（main.py）没有 streamlit，或本地没有 secrets 文件
-        pass
-    return os.getenv(name, default)
-
-
-def _load_dotenv_if_present():
-    """本地 .env 支持。缺 python-dotenv 时静默跳过（与原有降级一致）。"""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
-
-
-_load_dotenv_if_present()
-
-DEEPSEEK_API_KEY = _secret("DEEPSEEK_API_KEY")
-DEEPSEEK_BASE_URL = _secret("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL = _secret("DEEPSEEK_MODEL", "deepseek-chat")
-
-
-def llm_available() -> bool:
-    return bool(DEEPSEEK_API_KEY)
-```
-
-**实测记录**（三种环境都验证过）：
+**实测记录**（三种环境分别用独立子进程测，避免相互污染）：
 
 | 场景 | `llm_available()` | 读取结果 |
 |---|---|---|
-| 云端：`st.secrets` 有 key | `True` | `sk-from-secrets` |
-| 本地：无 streamlit，走环境变量 | `True` | `sk-from-env` |
-| 都没有 | `False` | 优雅降级，不抛异常 |
+| 云端：`st.secrets` 有 key | `True` | `sk-cloud` |
+| 本地：无 streamlit，走环境变量 | `True` | `sk-local` |
+| 都没有（移走 `.env` 后测） | `False` | 优雅降级，`BASE_URL`/`MODEL` 落默认值 |
 
-改完后 `from diligence.pipeline import run_diligence` 仍正常导入，样例数据
-`['risky', 'healthy']` 可读。
+另确认 `pipeline` 正常导入、样例 `['risky', 'healthy']` 可读、
+`run_diligence()` 离线模式跑通（返回 `(report, result)` 二元组）。
 
-> 顺带一提：改动**不依赖** `python-dotenv` —— 缺这个包时会静默跳过，
-> 与原项目「纯规则模式允许不装 dotenv」的降级设计保持一致。
+> `deploy/config.py.streamlit-cloud` 是该文件的副本，便于单独取用或回滚。
 
 ### 部署时填 secrets 的内容
 
@@ -152,31 +108,56 @@ DEEPSEEK_MODEL = "deepseek-chat"
 
 打开 <https://share.streamlit.io>，用 **GitHub 账号**登录并授权。
 
-### 步骤 2：创建应用
+> ⚠️ **必须用 GitHub 账号登录**。如果之前用邮箱注册过 Streamlit 账号，
+> 要改走 GitHub 授权 —— 否则工作台里看不到「Create app」，因为
+> Community Cloud 是从 GitHub 仓库拉代码的。
 
-点右上角 **Create app** → 选 **Deploy a public app from GitHub**，然后填：
+### 步骤 2：点右上角 Create app
+
+登录后进入工作台（页面顶部有 `My apps` / `My profile` / `Explore` 这些标签），
+**右上角**有一个 `Create app` 按钮，点它。
+
+> 工作台中间如果是「No apps to show in this workspace / Deploy one now」，
+> 点那个 **Deploy one now** 也是一样的效果。
+
+### 步骤 3：回答「Do you already have an app?」
+
+会弹出一个询问，选 **`Yup, I have an app`**。
+（另一条 `Nope, I don't have an app` 是给从模板新建的人用的，不走这条。）
+
+> 这一步官方文档有写，但很容易漏 —— 漏了就会觉得"找不到该填的地方"。
+
+### 步骤 4：填表单
+
+表单长这样（字段名照抄官方）：
 
 | 字段 | 填什么 |
 |---|---|
-| Repository | `sunhao33/mingjian-due-diligence` |
-| Branch | `master` |
-| Main file path | `app.py` |
-| App URL | 自定义子域名，例如 `mingjian-due-diligence` |
+| **Repository** | `sunhao33/mingjian-due-diligence` |
+| **Branch** | `master` |
+| **Main file path** | `app.py` |
+| **App URL (optional)** | 自定义子域名，例如 `mingjian-due-diligence` |
 
-> **App URL 就是最终的公网地址**，形如
-> `https://mingjian-due-diligence.streamlit.app`
-> 这个名字会填进参赛信息表的「公网地址」栏，想好再定。
+- Repository 右侧有 `Paste GitHub URL`，也可以直接粘仓库地址。
+- App URL 填好后下方会显示绿色的 **`Domain is available`**，说明这个名字没人占。
+- 不填 App URL 也行，但系统会按
+  `[用户名]-[仓库名]-[文件名]-[随机哈希]` 生成一串很长的地址，不好记也不好念。
 
-### 步骤 3：填 secrets（可选）
+> 官方说明：App URL 部署后仍可随时在 App settings 里修改。
 
-点 **Advanced settings** → 在 **Secrets** 框里粘贴第三节的 TOML 内容。
+### 步骤 5：填 secrets（可选）
 
-### 步骤 4：部署
+点表单下方的 **`Advanced settings`** → 在 **Secrets** 框里粘贴第三节的
+TOML 内容 → **Save**。
 
-点 **Deploy**。首次构建会按 `requirements.txt` 安装依赖，通常 2–5 分钟。
-构建日志在页面上实时可见。
+同一弹窗里还能选 **Python 版本**（默认 3.12）。
 
-### 步骤 5：验证
+### 步骤 6：Deploy
+
+点蓝色的 **`Deploy!`** 按钮。首次构建会按 `requirements.txt` 安装依赖，
+通常 2–5 分钟。部署过程中右侧会显示日志（只有对该仓库有写权限的人能看）。
+
+### 步骤 7：验证
 
 构建完成后逐项确认：
 

@@ -185,3 +185,21 @@ def describe(meta):
     """一句话描述数据来源，用于报告「数据来源」行与界面提示。"""
     return (f"{meta.get('code')} {meta.get('title')}"
             f"（{meta.get('date')} 公告，{meta.get('source')}）")
+
+
+def company_name_of(title):
+    """从公告标题里取公司简称。
+
+    '美的集团:2025年年度报告'      -> '美的集团'
+    '贵州茅台:贵州茅台2025年年度报告' -> '贵州茅台'
+
+    注意不能简单取冒号**后半段**：那样 '美的集团:2025年年度报告' 会得到 '2025'，
+    实测把「标的企业」写成了「2025」。
+    """
+    t = (title or "").strip()
+    if ":" in t or "：" in t:
+        head = re.split(r"[:：]", t)[0].strip()
+        if head and not re.match(r"^20\d{2}", head):
+            return head
+    stripped = _ANNUAL_RE.sub("", t).strip(" :：·-")
+    return stripped or t or "未知公司"

@@ -75,8 +75,12 @@ def check_scale(company, reference):
 
 
 def check_company(company):
-    """返回告警列表 [{"year": int, "name": str, "detail": str}, ...]，无问题时为空列表。"""
-    warns = []
+    """返回告警列表 [{"year": int, "name": str, "detail": str}, ...]，无问题时为空列表。
+
+    开头并入 company["_warnings"] —— 抽取环节自产的告警（例如降级为规则抽取后
+    「行业基准为假设值」），保证它们同样出现在报告的数据校验章节里。
+    """
+    warns = list(company.get("_warnings") or [])
     periods = sorted(company.get("periods", []), key=lambda p: p.get("year") or 0)
 
     prev_inc = None

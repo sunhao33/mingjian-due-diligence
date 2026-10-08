@@ -908,6 +908,89 @@ def test_html_report_plain_language_covers_rules():
     assert not stale, f"通俗解释里这些名称已与规则对不上（可能改名了）：{stale}"
 
 
+# ── 大模型不可用时的降级 ──
+@case
+def test_friendly_reason_maps_common_failures():
+    """模型故障要翻译成用户看得懂、能据以行动的一句话。"""
+    from diligence.extract import friendly_reason
+
+    class AuthenticationError(Exception):
+        pass
+
+    class RateLimitError(Exception):
+        pass
+
+    class APIConnectionError(Exception):
+        pass
+
+    assert "无效或已过期" in friendly_reason(AuthenticationError("401 blah"))
+    assert "超限" in friendly_reason(RateLimitError("429"))
+    assert "网络" in friendly_reason(APIConnectionError("connection reset"))
+    assert "余额" in friendly_reason(Exception("402 Insufficient Balance"))
+    assert "未配置" in friendly_reason(
+        RuntimeError("未配置 DEEPSEEK_API_KEY，无法调用模型抽取财报。"))
+    # 未知异常也要给出可读信息（带上类型名便于排查）
+    assert "KeyError" in friendly_reason(KeyError("x"))
+
+
+@case
+def test_extract_falls_back_to_rules_when_model_fails():
+    """Key 失效/断网时必须自动降级为规则抽取，而不是抛出去中断流程。
+
+    回归来源：实测 Key 过期后界面直接弹 AuthenticationError 堆栈，
+    而项目本就有不依赖模型的规则抽取器（parse_lines.py）可以兜底。
+    """
+    from diligence import extract as E
+
+    calls = {"llm": 0, "rules": 0}
+
+    def _boom(*a, **k):
+        calls["llm"] += 1
+        raise RuntimeError("AuthenticationError: 401 invalid api key")
+
+    def _rules(pdf_path, company_name=None, industry="制造业", origin=None):
+        calls["rules"] += 1
+        comp = {"company_name": company_name or "未知", "industry": industry,
+                "periods": [{"year": 2024,
+                             "balance_sheet": {"总资产": 1000, "总负债": 400,
+                                               "净资产": 600},
+                             "income": {"营业收入": 500, "营业成本": 300,
+                                        "净利润": 80},
+                             "cashflow": {"经营活动现金流净额": 90}}]}
+        comp["_source"] = {"file": "x.pdf", "model": "规则抽取（未使用大模型）"}
+        return comp, {}
+
+    saved_pdf, saved_rules = E.extract_from_pdf, E.extract_by_rules
+    try:
+        E.extract_from_pdf = _boom
+        E.extract_by_rules = _rules
+        comp, notice = E.extract_with_fallback("x.pdf", company_name="测试公司",
+                                               industry="房地产")
+        assert calls == {"llm": 1, "rules": 1}, calls
+        assert notice and "无效或已过期" in notice, notice
+        assert comp["company_name"] == "测试公司"
+        assert comp["industry"] == "房地产"
+    finally:
+        E.extract_from_pdf, E.extract_by_rules = saved_pdf, saved_rules
+
+
+@case
+def test_rule_fallback_warns_about_assumed_industry():
+    """降级后必须显式告警「行业基准为假设值」，否则读者会把阈值当成事实。"""
+    from diligence.validate import check_company
+
+    comp = {"company_name": "X", "industry": "制造业",
+            "_warnings": [{"year": None, "name": "行业基准为假设值",
+                           "detail": "阈值按「制造业」套用"}],
+            "periods": [{"year": 2024,
+                         "balance_sheet": {"总资产": 1000, "总负债": 400,
+                                           "净资产": 600},
+                         "income": {"营业收入": 500, "营业成本": 300, "净利润": 80},
+                         "cashflow": {"经营活动现金流净额": 90}}]}
+    names = [w["name"] for w in check_company(comp)]
+    assert "行业基准为假设值" in names, names
+
+
 @case
 def test_pipeline_result_has_html():
     """主流程产物里必须同时带 Markdown 与 HTML 两种报告。"""
@@ -917,6 +1000,48 @@ def test_pipeline_result_has_html():
     assert md.startswith("# ")
     assert result.get("html", "").startswith("<!DOCTYPE html>")
     assert "综合风险等级" in result["html"]
+
+
+@case
+def test_company_name_from_announcement_title():
+    """从公告标题取公司简称，不能取冒号后半段。
+
+    回归来源：'美的集团:2025年年度报告'.split(':')[-1] 得到 '2025年年度报告'，
+    再去掉「年年度报告」就只剩 '2025'，报告里「标的企业」写成了「2025」。
+    """
+    from diligence.areport import company_name_of
+
+    assert company_name_of("美的集团:2025年年度报告") == "美的集团"
+    assert company_name_of("万科A:2025年年度报告") == "万科A"
+    assert company_name_of("贵州茅台:贵州茅台2025年年度报告") == "贵州茅台"
+    assert company_name_of("宁德时代:2025年年度报告") == "宁德时代"
+    # 没有冒号时退回「去掉年份」的结果
+    assert company_name_of("2025年年度报告") == "2025年年度报告"
+    assert company_name_of("") == "未知公司"
+
+
+@case
+def test_rule_parser_handles_direction_annotated_row_names():
+    """行名中间插入方向说明时也要能抽到。
+
+    回归来源：美的集团 2025 年报现金流量表写作
+    「经营活动产生/(使用)的现金流量净额」，与利润表的「净 (亏损) / 利润」
+    是同一类陷阱，原先的固定字符串匹配直接漏掉，导致净现比算不出来。
+    """
+    from diligence.parse_lines import _claim
+
+    for line in (
+        "经营活动产生的现金流量净额 53,345,930 60,511,572",
+        "经营活动产生/(使用)的现金流量净额 四(64)(h) 53,345,930 60,511,572 (11,628,058) 4,645,875",
+        "经营活动现金流量净额 1,234 567",
+    ):
+        hit = _claim(line)
+        assert hit is not None, line
+        group, field, vals = hit
+        assert (group, field) == ("cashflow", "经营活动现金流净额"), (line, hit)
+        assert vals[0] == 53345930.0 if "53,345,930" in line else True
+    # 不能把「投资活动产生/(使用)的现金流量净额」误当成经营活动
+    assert _claim("投资活动产生/(使用)的现金流量净额 25,340,273 (87,901,802)") is None
 
 
 def main():

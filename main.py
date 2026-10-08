@@ -85,8 +85,14 @@ def main():
             return 3
         print(f"[已下载] {path}（{meta['size']/1024/1024:.1f} MB）")
 
-        from diligence.extract import extract_from_pdf
-        company = extract_from_pdf(path, origin=areport.describe(meta))
+        from diligence.extract import extract_with_fallback
+
+        company, notice = extract_with_fallback(
+            path, origin=areport.describe(meta),
+            company_name=areport.company_name_of(pick["title"]))
+        if notice:
+            print(f"[降级] 未能调用大模型（{notice}），已改用规则抽取；"
+                  f"行业基准按「制造业」假设，详见报告的数据校验章节。")
         report, result = run_diligence(company, use_llm=not args.no_llm)
         print("=" * 60)
         print(report)
@@ -95,8 +101,11 @@ def main():
         return 0
 
     if args.pdf:
-        from diligence.extract import extract_from_pdf
-        company = extract_from_pdf(args.pdf)
+        from diligence.extract import extract_with_fallback
+        company, notice = extract_with_fallback(args.pdf)
+        if notice:
+            print(f"[降级] 未能调用大模型（{notice}），已改用规则抽取；"
+                  f"行业基准按「制造业」假设，详见报告的数据校验章节。")
         report, result = run_diligence(company, use_llm=not args.no_llm)
         print("=" * 60)
         print(report)
